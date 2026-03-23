@@ -1,8 +1,8 @@
 # Heritcoin Identity
 
-English | 中文
+[English](README.md) | 中文
 
-AI-powered coin and antique identification skills for Claude Code / OpenCode.
+AI 驱动的硬币和古董鉴定技能，专为 Claude Code / OpenCode 设计。
 
 ## 功能特性
 
@@ -28,7 +28,7 @@ npx skills add heritcoin/heritcoin-identity
 npx skills add heritcoin/heritcoin-identity --skill heritcoin-recognizer
 ```
 
-## Available Skills
+## 可用技能
 
 ### 🪙 heritcoin-recognizer
 
