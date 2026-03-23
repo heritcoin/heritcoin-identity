@@ -1,6 +1,6 @@
 # Heritcoin Identity
 
-English | 中文
+English | [中文](README.zh.md)
 
 AI-powered coin and antique identification skills for Claude Code / OpenCode.
 
