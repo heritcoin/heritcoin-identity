@@ -45,6 +45,26 @@ const LOCALE_MAP: Record<string, SupportedLocale> = {
   "ru-kz": "ru",
 };
 
+const LOCALE_LANGUAGE_CODE: Record<SupportedLocale, string> = {
+  en: "en",
+  "zh-CN": "zh",
+  "zh-TW": "zh-TW",
+  es: "es",
+  ja: "ja",
+  ko: "ko",
+  ru: "ru",
+};
+
+const LOCALE_AREA_CODE: Record<SupportedLocale, string> = {
+  en: "US",
+  "zh-CN": "CN",
+  "zh-TW": "TW",
+  es: "ES",
+  ja: "JP",
+  ko: "KR",
+  ru: "RU",
+};
+
 export function detectSystemLocale(): SupportedLocale {
   const envLang = process.env.LANG || process.env.LC_ALL || process.env.LANGUAGE;
   if (envLang) {
@@ -73,33 +93,65 @@ export function detectSystemLocale(): SupportedLocale {
 
 export function normalizeLocale(locale: string): SupportedLocale | null {
   const cleanLocale = locale.split(".")[0].replace(/_/g, "-").toLowerCase();
-  return LOCALE_MAP[cleanLocale] || null;
+  return LOCALE_MAP[cleanLocale] || LOCALE_MAP[cleanLocale.split("-")[0]] || null;
+}
+
+export function detectLocaleFromText(text: string): SupportedLocale | null {
+  const normalizedText = text.trim();
+  if (!normalizedText) {
+    return null;
+  }
+
+  if (/[\u3040-\u30ff]/.test(normalizedText)) {
+    return "ja";
+  }
+
+  if (/[\uac00-\ud7af]/.test(normalizedText)) {
+    return "ko";
+  }
+
+  if (/[\u0400-\u04ff]/.test(normalizedText)) {
+    return "ru";
+  }
+
+  if (/[\u3400-\u9fff\uf900-\ufaff]/.test(normalizedText)) {
+    return "zh-CN";
+  }
+
+  if (/[¿¡ñáéíóúü]/i.test(normalizedText)) {
+    return "es";
+  }
+
+  if (/[A-Za-z]/.test(normalizedText)) {
+    return "en";
+  }
+
+  return null;
+}
+
+function resolveLocaleForCodes(locale?: SupportedLocale | string): SupportedLocale {
+  if (locale) {
+    const normalized = typeof locale === "string" ? normalizeLocale(locale) : locale;
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return detectSystemLocale();
+}
+
+export function getLanguageCode(locale?: SupportedLocale | string): string {
+  return LOCALE_LANGUAGE_CODE[resolveLocaleForCodes(locale)];
+}
+
+export function getAreaCode(locale?: SupportedLocale | string): string {
+  return LOCALE_AREA_CODE[resolveLocaleForCodes(locale)];
 }
 
 export function getSystemLanguageCode(): string {
-  const locale = detectSystemLocale();
-  const codeMap: Record<SupportedLocale, string> = {
-    en: "en",
-    "zh-CN": "zh",
-    "zh-TW": "zh-TW",
-    es: "es",
-    ja: "ja",
-    ko: "ko",
-    ru: "ru",
-  };
-  return codeMap[locale];
+  return getLanguageCode();
 }
 
 export function getSystemAreaCode(): string {
-  const locale = detectSystemLocale();
-  const areaMap: Record<SupportedLocale, string> = {
-    en: "US",
-    "zh-CN": "CN",
-    "zh-TW": "TW",
-    es: "ES",
-    ja: "JP",
-    ko: "KR",
-    ru: "RU",
-  };
-  return areaMap[locale];
+  return getAreaCode();
 }

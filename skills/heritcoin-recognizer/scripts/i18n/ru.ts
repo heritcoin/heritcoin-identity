@@ -1,4 +1,4 @@
-import type { LocaleContent } from "./en.js";
+import type { LocaleContent } from "./en.ts";
 
 export const ru: LocaleContent = {
   labels: {
@@ -16,6 +16,7 @@ export const ru: LocaleContent = {
     obverse: "Аверс",
     reverse: "Реверс",
     details: "Подробности",
+    collectionAdvice: "Совет по коллекционированию",
   },
   messages: {
     recognitionResult: "Результат распознавания",
@@ -24,9 +25,11 @@ export const ru: LocaleContent = {
     recognitionFailed: "Ошибка распознавания",
     notCoin: "Не распознано как монета, возможно другой предмет",
     error: "Ошибка",
+    collectionAdviceWithValuation: "Используйте текущую оценку только как быстрый ориентир и в первую очередь сохраняйте состояние монеты, прежде чем принимать решение о долгосрочном хранении в коллекции.",
+    collectionAdviceDefault: "Сначала сохраните состояние монеты, а затем проверьте разновидность и знак монетного двора перед решением о долгосрочном хранении в коллекции.",
   },
   prompts: {
-    usage: "Использование: npx tsx recognize.ts <img1> <img2> [token]",
+    usage: "Использование: node recognize.ts <img1> <img2> [token] [locale]",
     missingFiles: "Пожалуйста, укажите оба файла изображений",
   },
 };

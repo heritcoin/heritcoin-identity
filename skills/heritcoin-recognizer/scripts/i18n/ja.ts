@@ -1,4 +1,4 @@
-import type { LocaleContent } from "./en.js";
+import type { LocaleContent } from "./en.ts";
 
 export const ja: LocaleContent = {
   labels: {
@@ -16,6 +16,7 @@ export const ja: LocaleContent = {
     obverse: "表面",
     reverse: "裹面",
     details: "詳細情報",
+    collectionAdvice: "収蔵アドバイス",
   },
   messages: {
     recognitionResult: "認識結果",
@@ -24,9 +25,11 @@ export const ja: LocaleContent = {
     recognitionFailed: "認識失敗",
     notCoin: "硬貨として認識できませんでした。他の物の可能性があります",
     error: "エラー",
+    collectionAdviceWithValuation: "まずは現在の推定価格を目安にしつつ、長期保有を判断する前に品相の保護を優先してください。",
+    collectionAdviceDefault: "まず品相の保護を優先し、長期保有を決める前に版別やミントマークを確認してください。",
   },
   prompts: {
-    usage: "使用方法: npx tsx recognize.ts <img1> <img2> [token]",
+    usage: "使用方法: node recognize.ts <img1> <img2> [token] [locale]",
     missingFiles: "両方の画像ファイルを提供してください",
   },
 };

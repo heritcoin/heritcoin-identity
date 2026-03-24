@@ -1,14 +1,24 @@
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
+import {
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "fs";
+import { homedir } from "os";
 import { extname, join, dirname } from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import {
+  detectLocaleFromText,
   getLocale,
   getCurrentLocale,
-  getSystemLanguageCode,
-  getSystemAreaCode,
+  getLanguageCode,
+  getAreaCode,
+  normalizeLocale,
   type SupportedLocale,
-} from "./i18n/index.js";
+} from "./i18n/index.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -21,6 +31,9 @@ const DEFAULT_TOKEN =
 
 const CACHE_DIR = join(__dirname, ".cache");
 const UUID_CACHE_FILE = join(CACHE_DIR, "device.uuid");
+const IMAGE_URL_IN_TEXT = /https?:\/\/[^\s"'`<>()\]]+/gi;
+const LOCAL_IMAGE_PATH_IN_TEXT =
+  /(?:^|[\s(])((?:\/|~\/)[^\s"'`<>()]+?\.(?:jpe?g|png|gif|webp|bmp|heic|heif))(?:$|[\s)])/gi;
 
 function generateUUID(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -57,6 +70,171 @@ function getCachedUUID(): string {
   return cachedUUID;
 }
 
+function getCodexHome(): string {
+  return process.env.CODEX_HOME || join(homedir(), ".codex");
+}
+
+function findLatestSessionFile(rootDir: string): string | null {
+  const matches: Array<{ path: string; mtimeMs: number }> = [];
+
+  function walk(directory: string) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+
+      if (!entry.isFile() || !entry.name.startsWith("rollout-") || !entry.name.endsWith(".jsonl")) {
+        continue;
+      }
+
+      matches.push({ path: fullPath, mtimeMs: statSync(fullPath).mtimeMs });
+    }
+  }
+
+  if (!existsSync(rootDir)) {
+    return null;
+  }
+
+  walk(rootDir);
+  if (matches.length === 0) {
+    return null;
+  }
+
+  matches.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  return matches[0].path;
+}
+
+function findSessionFileByThreadId(rootDir: string, threadId: string): string | null {
+  function walk(directory: string): string | null {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        const nestedMatch = walk(fullPath);
+        if (nestedMatch) {
+          return nestedMatch;
+        }
+        continue;
+      }
+
+      if (
+        entry.isFile() &&
+        entry.name.startsWith("rollout-") &&
+        entry.name.endsWith(".jsonl") &&
+        entry.name.includes(threadId)
+      ) {
+        return fullPath;
+      }
+    }
+
+    return null;
+  }
+
+  if (!existsSync(rootDir)) {
+    return null;
+  }
+
+  return walk(rootDir);
+}
+
+function stripImageRefsFromText(text: string): string {
+  return text
+    .replace(IMAGE_URL_IN_TEXT, " ")
+    .replace(LOCAL_IMAGE_PATH_IN_TEXT, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractUserText(entry: unknown): string | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const record = entry as {
+    type?: string;
+    payload?: {
+      type?: string;
+      role?: string;
+      content?: Array<Record<string, unknown>>;
+    };
+  };
+
+  if (
+    record.type !== "response_item" ||
+    record.payload?.type !== "message" ||
+    record.payload.role !== "user" ||
+    !Array.isArray(record.payload.content)
+  ) {
+    return null;
+  }
+
+  const text = record.payload.content
+    .filter((item) => item.type === "input_text" && typeof item.text === "string")
+    .map((item) => String(item.text))
+    .join(" ")
+    .trim();
+
+  return text || null;
+}
+
+export function detectConversationLocaleFromSessionFile(
+  sessionFile: string,
+): SupportedLocale | null {
+  const lines = readFileSync(sessionFile, "utf8").split(/\r?\n/);
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim();
+    if (!line) {
+      continue;
+    }
+
+    try {
+      const userText = extractUserText(JSON.parse(line));
+      if (!userText) {
+        continue;
+      }
+
+      const detectedLocale = detectLocaleFromText(stripImageRefsFromText(userText));
+      if (detectedLocale) {
+        return detectedLocale;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function detectConversationLocale(): SupportedLocale | null {
+  try {
+    const sessionsRoot = join(getCodexHome(), "sessions");
+    const threadSessionFile = process.env.CODEX_THREAD_ID
+      ? findSessionFileByThreadId(sessionsRoot, process.env.CODEX_THREAD_ID)
+      : null;
+    const sessionFile = threadSessionFile || findLatestSessionFile(sessionsRoot);
+
+    if (!sessionFile) {
+      return null;
+    }
+
+    return detectConversationLocaleFromSessionFile(sessionFile);
+  } catch {
+    return null;
+  }
+}
+
+export function resolveRuntimeLocale(locale?: SupportedLocale | string): SupportedLocale {
+  const explicitLocale = locale
+    ? typeof locale === "string"
+      ? normalizeLocale(locale)
+      : locale
+    : null;
+
+  return explicitLocale || detectConversationLocale() || getCurrentLocale();
+}
+
 interface DeviceInfo {
   devModel: string;
   brand: string;
@@ -79,6 +257,19 @@ interface CoinInfo {
   weight: string;
   frontDesc: string;
   backDesc: string;
+}
+
+function buildCollectionAdvice(
+  info: CoinInfo,
+  locale?: SupportedLocale,
+): string {
+  const t = getLocale(locale);
+  const advice =
+    info.price && info.priceUnit
+      ? t.messages.collectionAdviceWithValuation
+      : t.messages.collectionAdviceDefault;
+
+  return `${t.labels.collectionAdvice}: ${advice}`;
 }
 
 interface CoinRecognitionResponse {
@@ -139,11 +330,11 @@ function getDeviceInfo(): DeviceInfo {
   return { devModel, brand, os, osVer };
 }
 
-function generateUserAgent(): string {
+function generateUserAgent(locale?: SupportedLocale): string {
   const device = getDeviceInfo();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const langCode = getSystemLanguageCode();
-  const areaCode = getSystemAreaCode();
+  const langCode = getLanguageCode(locale);
+  const areaCode = getAreaCode(locale);
 
   const parts = [
     `network/WIFI`,
@@ -177,12 +368,34 @@ function getMimeType(filePath: string): string {
   return mimeTypes[ext] || "image/jpeg";
 }
 
-function imageToBase64(filePath: string): string {
-  if (!existsSync(filePath)) {
-    throw new Error(`文件不存在: ${filePath}`);
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//.test(value);
+}
+
+function isDataUrl(value: string): boolean {
+  return /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value);
+}
+
+function parseDataUrl(dataUrl: string): { mimeType: string; base64Content: string } {
+  const match = dataUrl.match(
+    /^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/,
+  );
+  if (!match) {
+    throw new Error("不支持的数据 URL");
   }
-  const buffer = readFileSync(filePath);
-  return `data:${getMimeType(filePath)};base64,${buffer.toString("base64")}`;
+  return {
+    mimeType: match[1],
+    base64Content: match[2].replace(/\s+/g, ""),
+  };
+}
+
+function createUploadHeaders(locale?: SupportedLocale): Record<string, string | number> {
+  return {
+    "User-Agent": generateUserAgent(locale),
+    Host: "identify-api-t.wpt.la",
+    "Content-Length": 0,
+    uuid: getCachedUUID(),
+  };
 }
 
 async function uploadFile(
@@ -194,17 +407,10 @@ async function uploadFile(
     throw new Error(`文件不存在: ${filePath}`);
   }
 
-  const t = getLocale(locale);
-
   const buffer = readFileSync(filePath);
   const base64Content = buffer.toString("base64");
 
-  const headers: Record<string, string | number> = {
-    "User-Agent": generateUserAgent(),
-    Host: "identify-api-t.wpt.la",
-    "Content-Length": 0,
-    uuid: getCachedUUID(),
-  };
+  const headers = createUploadHeaders(locale);
 
   let body: string | Buffer;
 
@@ -250,15 +456,56 @@ async function uploadFile(
   return result.data.url;
 }
 
+async function uploadDataUrl(
+  dataUrl: string,
+  locale?: SupportedLocale,
+): Promise<string> {
+  const { base64Content } = parseDataUrl(dataUrl);
+  const headers = createUploadHeaders(locale);
+  const body = JSON.stringify({ file: base64Content, mode: 2 });
+  headers["Content-Type"] = "application/json";
+  headers["Content-Length"] = Buffer.byteLength(body);
+
+  const response = await fetch(UPLOAD_URL, {
+    method: "POST",
+    headers: headers as Record<string, string>,
+    body,
+  });
+  const result = (await response.json()) as {
+    code: number;
+    data?: { url?: string };
+    msg?: string;
+  };
+
+  if (result.code !== 0 || !result.data?.url) {
+    throw new Error(`文件上传失败: ${result.msg || "未知错误"}`);
+  }
+
+  return result.data.url;
+}
+
+async function prepareImageReference(
+  imageInput: string,
+  locale?: SupportedLocale,
+): Promise<string> {
+  if (isHttpUrl(imageInput)) {
+    return imageInput;
+  }
+  if (isDataUrl(imageInput)) {
+    return uploadDataUrl(imageInput, locale);
+  }
+  return uploadFile(imageInput, true, locale);
+}
+
 async function recognizeCoin(
   img1: string,
   img2: string,
   userToken?: string,
   locale?: SupportedLocale,
 ): Promise<CoinRecognitionResponse> {
-  const isUrl = /^https?:\/\//.test(img1) && /^https?:\/\//.test(img2);
+  const isUrl = isHttpUrl(img1) && isHttpUrl(img2);
   const token = userToken || DEFAULT_TOKEN;
-  const userAgent = generateUserAgent();
+  const userAgent = generateUserAgent(locale);
 
   const headers: Record<string, string> = {
     ut: token,
@@ -278,8 +525,8 @@ async function recognizeCoin(
   } else {
     console.log(t.messages.uploading);
     const [url1, url2] = await Promise.all([
-      uploadFile(img1, true, locale),
-      uploadFile(img2, true, locale),
+      prepareImageReference(img1, locale),
+      prepareImageReference(img2, locale),
     ]);
     console.log(t.messages.uploadComplete);
     body = JSON.stringify({ img1: url1, img2: url2 });
@@ -322,12 +569,11 @@ function formatOutput(info: CoinInfo, locale?: SupportedLocale): string {
   const t = getLocale(locale);
   const parts: string[] = [];
 
-  if (info.price && info.priceUnit) {
-    parts.push(`${t.labels.valuation}: ${info.price} ${info.priceUnit}`);
-  }
-
   if (info.recognitionText) {
     parts.push(`${t.labels.name}: ${info.recognitionText}`);
+  }
+  if (info.price && info.priceUnit) {
+    parts.push(`${t.labels.valuation}: ${info.price} ${info.priceUnit}`);
   }
   if (info.years) {
     parts.push(`${t.labels.year}: ${info.years}`);
@@ -365,10 +611,11 @@ function formatOutput(info: CoinInfo, locale?: SupportedLocale): string {
   const mainInfo = parts.length > 0 ? parts.join("\n") : "";
   const detailInfo =
     details.length > 0 ? `${t.labels.details}\n\n${details.join("\n")}` : "";
+  const collectionAdvice = buildCollectionAdvice(info, locale);
 
   return `${t.messages.recognitionResult}
 
-${mainInfo}${mainInfo && detailInfo ? "\n\n" : ""}${detailInfo}`;
+${mainInfo}${mainInfo && detailInfo ? "\n\n" : ""}${detailInfo}${(mainInfo || detailInfo) && collectionAdvice ? "\n\n" : ""}${collectionAdvice}`;
 }
 
 export async function main(
@@ -377,11 +624,11 @@ export async function main(
   userToken?: string,
   locale?: SupportedLocale,
 ) {
-  const t = getLocale(locale);
-  const detectedLocale = getCurrentLocale();
+  const runtimeLocale = resolveRuntimeLocale(locale);
+  const t = getLocale(runtimeLocale);
 
   try {
-    const response = await recognizeCoin(img1, img2, userToken, locale);
+    const response = await recognizeCoin(img1, img2, userToken, runtimeLocale);
 
     if (response.code !== 0) {
       return `${t.messages.recognitionFailed}: ${response.msg || "Unknown error"}`;
@@ -392,7 +639,7 @@ export async function main(
     }
 
     const info = parseCoinInfo(response);
-    return formatOutput(info, locale || detectedLocale);
+    return formatOutput(info, runtimeLocale);
   } catch (error) {
     return `${t.messages.error}: ${error instanceof Error ? error.message : String(error)}`;
   }

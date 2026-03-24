@@ -1,8 +1,8 @@
-import type { LocaleContent } from "./en.js";
+import type { LocaleContent } from "./en.ts";
 
 export const zhTW: LocaleContent = {
   labels: {
-    valuation: "估值",
+    valuation: "估價",
     name: "名稱",
     year: "年份",
     region: "國家/地區",
@@ -16,6 +16,7 @@ export const zhTW: LocaleContent = {
     obverse: "正面",
     reverse: "背面",
     details: "詳細資訊",
+    collectionAdvice: "收藏建議",
   },
   messages: {
     recognitionResult: "識別結果",
@@ -24,9 +25,11 @@ export const zhTW: LocaleContent = {
     recognitionFailed: "識別失敗",
     notCoin: "未識別為硬幣，可能是其他物品",
     error: "錯誤",
+    collectionAdviceWithValuation: "先把目前估價當作快速參考，優先保護品相，再決定是否長期收藏。",
+    collectionAdviceDefault: "建議先保護品相，再結合版別和鑄記判斷是否長期收藏。",
   },
   prompts: {
-    usage: "用法: npx tsx recognize.ts <img1> <img2> [token]",
+    usage: "用法: node recognize.ts <img1> <img2> [token] [locale]",
     missingFiles: "請提供兩個圖片檔案",
   },
 };
