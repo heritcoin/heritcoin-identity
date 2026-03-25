@@ -273,8 +273,8 @@ function generateUserAgent(locale?: SupportedLocale): string {
     `areaSys/${areaCode}`,
     `lang/${langCode}`,
     `area/${areaCode}`,
-    "appUi/1",
-    "sc/",
+    `appUi/1`,
+    `sc/ai-agent`,
   ].join(";");
 }
 
@@ -303,11 +303,13 @@ function parseDataUrl(dataUrl: string): {
 }
 
 function createUploadHeaders(
+  userToken?: string,
   locale?: SupportedLocale,
 ): Record<string, string | number> {
   return {
+    ut: userToken || "",
     "User-Agent": generateUserAgent(locale),
-    Host: "identify-api-t.wpt.la",
+    Host: "api.heritcoin.com",
     "Content-Length": 0,
     uuid: getCachedUUID(),
   };
@@ -316,6 +318,7 @@ function createUploadHeaders(
 async function uploadFile(
   filePath: string,
   useBase64: boolean = false,
+  userToken?: string,
   locale?: SupportedLocale,
 ): Promise<string> {
   const resolvedPath = expandHomePath(filePath);
@@ -325,7 +328,7 @@ async function uploadFile(
 
   const buffer = readFileSync(resolvedPath);
   const base64Content = buffer.toString("base64");
-  const headers = createUploadHeaders(locale);
+  const headers = createUploadHeaders(userToken, locale);
 
   let body: string | Buffer;
 
@@ -373,10 +376,11 @@ async function uploadFile(
 
 async function uploadDataUrl(
   dataUrl: string,
+  userToken?: string,
   locale?: SupportedLocale,
 ): Promise<string> {
   const { base64Content } = parseDataUrl(dataUrl);
-  const headers = createUploadHeaders(locale);
+  const headers = createUploadHeaders(userToken, locale);
   const body = JSON.stringify({ file: base64Content, mode: 2 });
   headers["Content-Type"] = "application/json";
   headers["Content-Length"] = Buffer.byteLength(body);
@@ -401,15 +405,16 @@ async function uploadDataUrl(
 
 async function prepareImageReference(
   imageInput: string,
+  userToken?: string,
   locale?: SupportedLocale,
 ): Promise<string> {
   if (isHttpUrl(imageInput)) {
     return imageInput;
   }
   if (isDataUrl(imageInput)) {
-    return uploadDataUrl(imageInput, locale);
+    return uploadDataUrl(imageInput, userToken, locale);
   }
-  return uploadFile(imageInput, true, locale);
+  return uploadFile(imageInput, true, userToken, locale);
 }
 
 async function recognizeCoin(
@@ -424,7 +429,7 @@ async function recognizeCoin(
     ut: token,
     "User-Agent": generateUserAgent(locale),
     Accept: "*/*",
-    Host: "identify-api-t.wpt.la",
+    Host: "api.heritcoin.com",
     Connection: "keep-alive",
     "Content-Type": "application/json",
     uuid: getCachedUUID(),
@@ -436,8 +441,8 @@ async function recognizeCoin(
     body = JSON.stringify({ img1, img2 });
   } else {
     const [url1, url2] = await Promise.all([
-      prepareImageReference(img1, locale),
-      prepareImageReference(img2, locale),
+      prepareImageReference(img1, token, locale),
+      prepareImageReference(img2, token, locale),
     ]);
     body = JSON.stringify({ img1: url1, img2: url2 });
   }
