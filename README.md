@@ -15,8 +15,8 @@ AI-powered coin and antique identification skills for Claude Code / OpenCode.
 
 ### 前置要求
 
-- Node.js >= 18.0.0
-- 能够运行 `npm` 或 `npx` 命令
+- 可直接运行 `.ts` 脚本的 `node`
+- 能够运行 `npx` 命令
 
 ### 安装 Skills
 
@@ -55,6 +55,11 @@ npx skills add heritcoin/heritcoin-identity --skill heritcoin-recognizer
 /heritcoin-recognizer
 ```
 
+内部执行路径已经收敛为两步：
+
+1. `node resolve-request.ts`
+2. `node recognize.ts <img1> <img2> --locale <locale>`
+
 **识别结果示例**:
 
 ```
@@ -92,29 +97,33 @@ heritcoin-identity/
 │   └── heritcoin-recognizer/
 │       ├── SKILL.md              # Skill 定义文件
 │       ├── scripts/
-│       │   ├── recognize.ts      # 识别脚本
+│       │   ├── resolve-request.ts # 对话任务解析脚本
+│       │   ├── recognize.ts      # 纯识别脚本
 │       │   ├── package.json
 │       │   ├── tsconfig.json
 │       │   └── i18n/             # 多语言支持
 │       └── evals/
 │           └── evals.json         # 评估测试用例
-├── dev/
-│   └── INSTALL.md                # 开发安装指南
 └── README.md
 ```
 
 ## 技术细节
 
-### 环境依赖
+### 开发命令
+
+```bash
+cd skills/heritcoin-recognizer/scripts
+node resolve-request.ts
+node recognize.ts <img1> <img2> --locale zh-CN
+```
+
+如需本地类型检查：
 
 ```bash
 cd skills/heritcoin-recognizer/scripts
 npm install
+npm run typecheck
 ```
-
-## 更新日志
-
-查看 [CHANGELOG.md](./CHANGELOG.md) 了解版本历史。
 
 ## 相关链接
 

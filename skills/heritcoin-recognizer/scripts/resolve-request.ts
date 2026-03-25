@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import {
   createReadStream,
+  existsSync,
   mkdirSync,
   readdirSync,
   statSync,
@@ -9,6 +10,12 @@ import {
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import readline from "readline";
+import {
+  detectLocaleFromText,
+  getCurrentLocale,
+  getLocale,
+  type SupportedLocale,
+} from "./i18n/index.ts";
 
 type ImageRef =
   | { kind: "data_url"; value: string }
@@ -21,6 +28,19 @@ interface MessageRecord {
   text: string;
   images: ImageRef[];
   explicitTextImages: ImageRef[];
+}
+
+interface ResolvedTask {
+  images: ImageRef[];
+}
+
+type RequestStatus = "no_images" | "need_images" | "ready" | "too_many";
+
+interface ResolveRequestResult {
+  status: RequestStatus;
+  locale: SupportedLocale;
+  images: string[];
+  reply: string | null;
 }
 
 const RECOGNITION_INTENT =
@@ -43,6 +63,10 @@ function getCodexHome(): string {
   return process.env.CODEX_HOME || join(homedir(), ".codex");
 }
 
+function expandHomePath(value: string): string {
+  return value.startsWith("~/") ? join(homedir(), value.slice(2)) : value;
+}
+
 function findLatestSessionFile(rootDir: string): string {
   const matches: Array<{ path: string; mtimeMs: number }> = [];
 
@@ -53,11 +77,19 @@ function findLatestSessionFile(rootDir: string): string {
         walk(fullPath);
         continue;
       }
-      if (!entry.isFile() || !entry.name.startsWith("rollout-") || !entry.name.endsWith(".jsonl")) {
+      if (
+        !entry.isFile() ||
+        !entry.name.startsWith("rollout-") ||
+        !entry.name.endsWith(".jsonl")
+      ) {
         continue;
       }
       matches.push({ path: fullPath, mtimeMs: statSync(fullPath).mtimeMs });
     }
+  }
+
+  if (!existsSync(rootDir)) {
+    throw new Error(`未找到 session 目录: ${rootDir}`);
   }
 
   walk(rootDir);
@@ -92,6 +124,10 @@ function findSessionFileByThreadId(rootDir: string, threadId: string): string | 
     return null;
   }
 
+  if (!existsSync(rootDir)) {
+    return null;
+  }
+
   return walk(rootDir);
 }
 
@@ -102,7 +138,7 @@ function classifyImageRef(value: string): ImageRef {
   if (/^https?:\/\//.test(value)) {
     return { kind: "http_url", value };
   }
-  return { kind: "local_path", value };
+  return { kind: "local_path", value: expandHomePath(value) };
 }
 
 function getImageRefKey(image: ImageRef): string {
@@ -154,7 +190,7 @@ function extractExplicitImageRefsFromText(text: string): ImageRef[] {
       continue;
     }
     seen.add(candidate);
-    refs.push({ kind: "local_path", value: candidate });
+    refs.push({ kind: "local_path", value: expandHomePath(candidate) });
   }
 
   return refs;
@@ -207,7 +243,7 @@ function extractMessage(entry: unknown): MessageRecord | null {
         continue;
       }
       if (item.type === "local_image" && typeof item.path === "string") {
-        images.push({ kind: "local_path", value: item.path });
+        images.push({ kind: "local_path", value: expandHomePath(item.path) });
       }
       continue;
     }
@@ -217,7 +253,7 @@ function extractMessage(entry: unknown): MessageRecord | null {
     }
   }
 
-  const text = textParts.join("");
+  const text = textParts.join(" ").trim();
   const explicitTextImages =
     role === "user" ? extractExplicitImageRefsFromText(text) : [];
 
@@ -272,7 +308,25 @@ function hasSupplementalImageCue(message: MessageRecord): boolean {
   return EXPLICIT_IMAGE_SUPPLEMENT_CUE.test(cueText);
 }
 
-function resolveLatestTaskImages(messages: MessageRecord[]): ImageRef[] {
+function detectConversationLocale(messages: MessageRecord[]): SupportedLocale {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") {
+      continue;
+    }
+
+    const detectedLocale = detectLocaleFromText(
+      stripExplicitImageRefsFromText(message.text),
+    );
+    if (detectedLocale) {
+      return detectedLocale;
+    }
+  }
+
+  return getCurrentLocale();
+}
+
+function resolveLatestTask(messages: MessageRecord[]): ResolvedTask {
   let currentTaskImages: ImageRef[] = [];
   let assistantRequestedMoreImages = false;
   let previousUserMessageHadImages = false;
@@ -321,13 +375,11 @@ function resolveLatestTaskImages(messages: MessageRecord[]): ImageRef[] {
       continue;
     }
 
-    if (!assistantKeepsTaskOpen(message.text)) {
-      currentTaskImages = [];
-      assistantRequestedMoreImages = false;
-    }
+    currentTaskImages = [];
+    assistantRequestedMoreImages = false;
   }
 
-  return currentTaskImages;
+  return { images: currentTaskImages };
 }
 
 function getFileExtensionFromMimeType(mimeType: string): string {
@@ -370,6 +422,48 @@ function materializeImages(images: ImageRef[], sessionFile: string): string[] {
   });
 }
 
+function buildResult(
+  status: RequestStatus,
+  locale: SupportedLocale,
+  images: string[],
+): ResolveRequestResult {
+  const t = getLocale(locale);
+
+  if (status === "no_images") {
+    return {
+      status,
+      locale,
+      images,
+      reply: t.messages.needTwoImages,
+    };
+  }
+
+  if (status === "need_images") {
+    return {
+      status,
+      locale,
+      images,
+      reply: t.messages.needOneMoreImage,
+    };
+  }
+
+  if (status === "too_many") {
+    return {
+      status,
+      locale,
+      images,
+      reply: t.messages.tooManyImages,
+    };
+  }
+
+  return {
+    status,
+    locale,
+    images,
+    reply: null,
+  };
+}
+
 async function main() {
   const sessionsRoot = join(getCodexHome(), "sessions");
   const sessionFileArg = process.argv[2];
@@ -378,31 +472,35 @@ async function main() {
     : null;
   const sessionFile = sessionFileArg || threadSessionFile || findLatestSessionFile(sessionsRoot);
   const messages = await loadMessages(sessionFile);
-  const taskImages = resolveLatestTaskImages(messages);
-  const images = materializeImages(taskImages, sessionFile);
+  const locale = detectConversationLocale(messages);
+  const task = resolveLatestTask(messages);
+  const images = materializeImages(task.images, sessionFile);
 
-  console.log(
-    JSON.stringify(
-      {
-        session_file: sessionFile,
-        task_image_count: images.length,
-        images,
-      },
-      null,
-      2,
-    ),
-  );
+  let status: RequestStatus = "no_images";
+  if (images.length === 1) {
+    status = "need_images";
+  } else if (images.length === 2) {
+    status = "ready";
+  } else if (images.length > 2) {
+    status = "too_many";
+  }
+
+  console.log(JSON.stringify(buildResult(status, locale, images), null, 2));
 }
 
-main().catch((error) => {
-  console.error(
-    JSON.stringify(
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
-      null,
-      2,
-    ),
-  );
-  process.exit(1);
-});
+const isMainModule = process.argv[1]?.endsWith("resolve-request.ts");
+
+if (isMainModule) {
+  main().catch((error) => {
+    console.error(
+      JSON.stringify(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(1);
+  });
+}

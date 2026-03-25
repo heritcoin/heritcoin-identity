@@ -1,17 +1,14 @@
+import { execSync } from "child_process";
 import {
-  readFileSync,
   existsSync,
   mkdirSync,
-  readdirSync,
-  statSync,
+  readFileSync,
   writeFileSync,
 } from "fs";
+import { basename, dirname, join } from "path";
 import { homedir } from "os";
-import { join, dirname } from "path";
-import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import {
-  detectLocaleFromText,
   getLocale,
   getCurrentLocale,
   getLanguageCode,
@@ -23,231 +20,18 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const API_URL = "https://api.heritcoin.com/app/v1/inference-machine-skills";
-const UPLOAD_URL = "https://api.heritcoin.com/app/v1/file/file-upload-skills";
+const API_URL =
+  process.env.HERITCOIN_API_URL ||
+  "https://api.heritcoin.com/app/v1/inference-machine-skills";
+const UPLOAD_URL =
+  process.env.HERITCOIN_UPLOAD_URL ||
+  "https://api.heritcoin.com/app/v1/file/file-upload-skills";
 
 const DEFAULT_TOKEN =
   "7cmuVaXBNTNxY9vAkoWlIC7gowa5e9p/a602PvsPdv6QAjcnjHF5nftuEwGGwvxk+NXrfpsvz6GtBr+o4RwHmRvKFD1MiSGjRw5f2e8OuexSqgOH8og3S/71qs/WGjBC";
 
 const CACHE_DIR = join(__dirname, ".cache");
 const UUID_CACHE_FILE = join(CACHE_DIR, "device.uuid");
-const IMAGE_URL_IN_TEXT = /https?:\/\/[^\s"'`<>()\]]+/gi;
-const LOCAL_IMAGE_PATH_IN_TEXT =
-  /(?:^|[\s(])((?:\/|~\/)[^\s"'`<>()]+?\.(?:jpe?g|png|gif|webp|bmp|heic|heif))(?:$|[\s)])/gi;
-
-function generateUUID(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-function getDeviceUUID(): string {
-  try {
-    if (!existsSync(CACHE_DIR)) {
-      mkdirSync(CACHE_DIR, { recursive: true });
-    }
-    if (existsSync(UUID_CACHE_FILE)) {
-      const cached = readFileSync(UUID_CACHE_FILE, "utf-8").trim();
-      if (cached && cached.length > 0) {
-        return cached;
-      }
-    }
-    const uuid = generateUUID();
-    writeFileSync(UUID_CACHE_FILE, uuid, "utf-8");
-    return uuid;
-  } catch {
-    return generateUUID();
-  }
-}
-
-let cachedUUID: string | null = null;
-function getCachedUUID(): string {
-  if (!cachedUUID) {
-    cachedUUID = getDeviceUUID();
-  }
-  return cachedUUID;
-}
-
-function getCodexHome(): string {
-  return process.env.CODEX_HOME || join(homedir(), ".codex");
-}
-
-function findLatestSessionFile(rootDir: string): string | null {
-  const matches: Array<{ path: string; mtimeMs: number }> = [];
-
-  function walk(directory: string) {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const fullPath = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        walk(fullPath);
-        continue;
-      }
-
-      if (
-        !entry.isFile() ||
-        !entry.name.startsWith("rollout-") ||
-        !entry.name.endsWith(".jsonl")
-      ) {
-        continue;
-      }
-
-      matches.push({ path: fullPath, mtimeMs: statSync(fullPath).mtimeMs });
-    }
-  }
-
-  if (!existsSync(rootDir)) {
-    return null;
-  }
-
-  walk(rootDir);
-  if (matches.length === 0) {
-    return null;
-  }
-
-  matches.sort((left, right) => right.mtimeMs - left.mtimeMs);
-  return matches[0].path;
-}
-
-function findSessionFileByThreadId(
-  rootDir: string,
-  threadId: string,
-): string | null {
-  function walk(directory: string): string | null {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const fullPath = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        const nestedMatch = walk(fullPath);
-        if (nestedMatch) {
-          return nestedMatch;
-        }
-        continue;
-      }
-
-      if (
-        entry.isFile() &&
-        entry.name.startsWith("rollout-") &&
-        entry.name.endsWith(".jsonl") &&
-        entry.name.includes(threadId)
-      ) {
-        return fullPath;
-      }
-    }
-
-    return null;
-  }
-
-  if (!existsSync(rootDir)) {
-    return null;
-  }
-
-  return walk(rootDir);
-}
-
-function stripImageRefsFromText(text: string): string {
-  return text
-    .replace(IMAGE_URL_IN_TEXT, " ")
-    .replace(LOCAL_IMAGE_PATH_IN_TEXT, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractUserText(entry: unknown): string | null {
-  if (!entry || typeof entry !== "object") {
-    return null;
-  }
-
-  const record = entry as {
-    type?: string;
-    payload?: {
-      type?: string;
-      role?: string;
-      content?: Array<Record<string, unknown>>;
-    };
-  };
-
-  if (
-    record.type !== "response_item" ||
-    record.payload?.type !== "message" ||
-    record.payload.role !== "user" ||
-    !Array.isArray(record.payload.content)
-  ) {
-    return null;
-  }
-
-  const text = record.payload.content
-    .filter(
-      (item) => item.type === "input_text" && typeof item.text === "string",
-    )
-    .map((item) => String(item.text))
-    .join(" ")
-    .trim();
-
-  return text || null;
-}
-
-export function detectConversationLocaleFromSessionFile(
-  sessionFile: string,
-): SupportedLocale | null {
-  const lines = readFileSync(sessionFile, "utf8").split(/\r?\n/);
-
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index]?.trim();
-    if (!line) {
-      continue;
-    }
-
-    try {
-      const userText = extractUserText(JSON.parse(line));
-      if (!userText) {
-        continue;
-      }
-
-      const detectedLocale = detectLocaleFromText(
-        stripImageRefsFromText(userText),
-      );
-      if (detectedLocale) {
-        return detectedLocale;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
-function detectConversationLocale(): SupportedLocale | null {
-  try {
-    const sessionsRoot = join(getCodexHome(), "sessions");
-    const threadSessionFile = process.env.CODEX_THREAD_ID
-      ? findSessionFileByThreadId(sessionsRoot, process.env.CODEX_THREAD_ID)
-      : null;
-    const sessionFile =
-      threadSessionFile || findLatestSessionFile(sessionsRoot);
-
-    if (!sessionFile) {
-      return null;
-    }
-
-    return detectConversationLocaleFromSessionFile(sessionFile);
-  } catch {
-    return null;
-  }
-}
-
-export function resolveRuntimeLocale(
-  locale?: SupportedLocale | string,
-): SupportedLocale {
-  const explicitLocale = locale
-    ? typeof locale === "string"
-      ? normalizeLocale(locale)
-      : locale
-    : null;
-
-  return explicitLocale || detectConversationLocale() || getCurrentLocale();
-}
 
 interface DeviceInfo {
   devModel: string;
@@ -287,6 +71,88 @@ interface SideInfo {
   labels?: string[];
   tags?: string[];
   detail?: SideDetailEntry[] | string;
+}
+
+interface CoinRecognitionResponse {
+  code: number;
+  msg?: string;
+  data?: {
+    recognitionText: string;
+    coinInformation?: PropertyValueEntry[];
+    propertyList?: PropertyValueEntry[];
+    obverseReverseInfo?: {
+      frontInfo?: SideInfo;
+      backInfo?: SideInfo;
+    };
+    physicalFeaturesInfo?: {
+      thickness?: string;
+      diameter?: string;
+      weight?: string;
+    };
+    price?: string;
+    priceUnit?: string;
+    years?: string | number;
+    isCoin?: number;
+  };
+}
+
+interface CliArgs {
+  img1?: string;
+  img2?: string;
+  userToken?: string;
+  locale?: string;
+}
+
+function generateUUID(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function getDeviceUUID(): string {
+  try {
+    if (!existsSync(CACHE_DIR)) {
+      mkdirSync(CACHE_DIR, { recursive: true });
+    }
+    if (existsSync(UUID_CACHE_FILE)) {
+      const cached = readFileSync(UUID_CACHE_FILE, "utf-8").trim();
+      if (cached) {
+        return cached;
+      }
+    }
+    const uuid = generateUUID();
+    writeFileSync(UUID_CACHE_FILE, uuid, "utf-8");
+    return uuid;
+  } catch {
+    return generateUUID();
+  }
+}
+
+let cachedUUID: string | null = null;
+
+function getCachedUUID(): string {
+  if (!cachedUUID) {
+    cachedUUID = getDeviceUUID();
+  }
+  return cachedUUID;
+}
+
+function expandHomePath(value: string): string {
+  return value.startsWith("~/") ? join(homedir(), value.slice(2)) : value;
+}
+
+export function resolveRuntimeLocale(
+  locale?: SupportedLocale | string,
+): SupportedLocale {
+  const explicitLocale = locale
+    ? typeof locale === "string"
+      ? normalizeLocale(locale)
+      : locale
+    : null;
+
+  return explicitLocale || getCurrentLocale();
 }
 
 function stringifyValue(value: unknown): string {
@@ -358,29 +224,6 @@ function buildCollectionAdvice(
   return `${t.labels.collectionAdvice}: ${advice}`;
 }
 
-interface CoinRecognitionResponse {
-  code: number;
-  msg?: string;
-  data?: {
-    recognitionText: string;
-    coinInformation?: PropertyValueEntry[];
-    propertyList?: PropertyValueEntry[];
-    obverseReverseInfo?: {
-      frontInfo?: SideInfo;
-      backInfo?: SideInfo;
-    };
-    physicalFeaturesInfo?: {
-      thickness?: string;
-      diameter?: string;
-      weight?: string;
-    };
-    price?: string;
-    priceUnit?: string;
-    years?: string | number;
-    isCoin?: number;
-  };
-}
-
 function getDeviceInfo(): DeviceInfo {
   const osType = process.platform;
   let devModel = "";
@@ -417,9 +260,9 @@ function generateUserAgent(locale?: SupportedLocale): string {
   const langCode = getLanguageCode(locale);
   const areaCode = getAreaCode(locale);
 
-  const parts = [
-    `network/WIFI`,
-    `appVer/4.0.1`,
+  return [
+    "network/WIFI",
+    "appVer/4.0.1",
     `devModel/${device.devModel}`,
     `brand/${device.brand}`,
     `os/${device.os}`,
@@ -430,11 +273,9 @@ function generateUserAgent(locale?: SupportedLocale): string {
     `areaSys/${areaCode}`,
     `lang/${langCode}`,
     `area/${areaCode}`,
-    `appUi/1`,
-    `sc/`,
-  ];
-
-  return parts.join(";");
+    "appUi/1",
+    "sc/",
+  ].join(";");
 }
 
 function isHttpUrl(value: string): boolean {
@@ -477,13 +318,13 @@ async function uploadFile(
   useBase64: boolean = false,
   locale?: SupportedLocale,
 ): Promise<string> {
-  if (!existsSync(filePath)) {
-    throw new Error(`文件不存在: ${filePath}`);
+  const resolvedPath = expandHomePath(filePath);
+  if (!existsSync(resolvedPath)) {
+    throw new Error(`文件不存在: ${resolvedPath}`);
   }
 
-  const buffer = readFileSync(filePath);
+  const buffer = readFileSync(resolvedPath);
   const base64Content = buffer.toString("base64");
-
   const headers = createUploadHeaders(locale);
 
   let body: string | Buffer;
@@ -493,10 +334,10 @@ async function uploadFile(
     body = JSON.stringify({ file: base64Content, mode: 2 });
     headers["Content-Length"] = Buffer.byteLength(body);
   } else {
-    const fileName = filePath.split("/").pop() || "image.jpg";
+    const fileName = basename(resolvedPath) || "image.jpg";
     const boundary = `----FormBoundary${Date.now()}`;
 
-    const parts: (string | Buffer)[] = [];
+    const parts: Array<string | Buffer> = [];
     parts.push(
       `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
     );
@@ -506,7 +347,7 @@ async function uploadFile(
     );
 
     body = Buffer.concat(
-      parts.map((p) => (Buffer.isBuffer(p) ? p : Buffer.from(p))),
+      parts.map((part) => (Buffer.isBuffer(part) ? part : Buffer.from(part))),
     );
     headers["Content-Type"] = `multipart/form-data; boundary=${boundary}`;
     headers["Content-Length"] = body.length;
@@ -579,11 +420,9 @@ async function recognizeCoin(
 ): Promise<CoinRecognitionResponse> {
   const isUrl = isHttpUrl(img1) && isHttpUrl(img2);
   const token = userToken || DEFAULT_TOKEN;
-  const userAgent = generateUserAgent(locale);
-
   const headers: Record<string, string> = {
     ut: token,
-    "User-Agent": userAgent,
+    "User-Agent": generateUserAgent(locale),
     Accept: "*/*",
     Host: "identify-api-t.wpt.la",
     Connection: "keep-alive",
@@ -592,17 +431,14 @@ async function recognizeCoin(
   };
 
   let body: string;
-  const t = getLocale(locale);
 
   if (isUrl) {
     body = JSON.stringify({ img1, img2 });
   } else {
-    console.log(t.messages.uploading);
     const [url1, url2] = await Promise.all([
       prepareImageReference(img1, locale),
       prepareImageReference(img2, locale),
     ]);
-    console.log(t.messages.uploadComplete);
     body = JSON.stringify({ img1: url1, img2: url2 });
   }
 
@@ -694,7 +530,9 @@ function parseCoinInfo(
   locale?: SupportedLocale,
 ): CoinInfo {
   const data = response.data;
-  if (!data) throw new Error("响应数据为空");
+  if (!data) {
+    throw new Error("响应数据为空");
+  }
 
   const coinInfo = buildPropertyMap(
     data.coinInformation?.length ? data.coinInformation : data.propertyList,
@@ -728,8 +566,9 @@ function formatOutput(info: CoinInfo, locale?: SupportedLocale): string {
   if (info.recognitionText) {
     parts.push(`${t.labels.name}: ${info.recognitionText}`);
   }
-  if (info.price && info.priceUnit) {
-    parts.push(`${t.labels.valuation}: ${info.price} ${info.priceUnit}`);
+  if (info.price) {
+    const valuation = uniqueNonEmpty([info.price, info.priceUnit]).join(" ");
+    parts.push(`${t.labels.valuation}: ${valuation}`);
   }
   if (info.years) {
     parts.push(`${t.labels.year}: ${info.years}`);
@@ -751,11 +590,14 @@ function formatOutput(info: CoinInfo, locale?: SupportedLocale): string {
   if (info.metal) {
     details.push(`${t.labels.material}: ${info.metal}`);
   }
-  if (info.diameter || info.thickness || info.weight) {
-    if (info.diameter) details.push(`${t.labels.diameter}: ${info.diameter}`);
-    if (info.thickness)
-      details.push(`${t.labels.thickness}: ${info.thickness}`);
-    if (info.weight) details.push(`${t.labels.weight}: ${info.weight}`);
+  if (info.diameter) {
+    details.push(`${t.labels.diameter}: ${info.diameter}`);
+  }
+  if (info.thickness) {
+    details.push(`${t.labels.thickness}: ${info.thickness}`);
+  }
+  if (info.weight) {
+    details.push(`${t.labels.weight}: ${info.weight}`);
   }
   if (info.frontDesc) {
     details.push(`${t.labels.obverse}: ${info.frontDesc}`);
@@ -764,7 +606,7 @@ function formatOutput(info: CoinInfo, locale?: SupportedLocale): string {
     details.push(`${t.labels.reverse}: ${info.backDesc}`);
   }
 
-  const mainInfo = parts.length > 0 ? parts.join("\n") : "";
+  const mainInfo = parts.join("\n");
   const detailInfo =
     details.length > 0 ? `${t.labels.details}\n\n${details.join("\n")}` : "";
   const collectionAdvice = buildCollectionAdvice(info, locale);
@@ -801,15 +643,48 @@ export async function main(
   }
 }
 
-const args = process.argv.slice(2);
+function parseCliArgs(args: string[]): CliArgs {
+  const positionals: string[] = [];
+  let userToken: string | undefined;
+  let locale: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--token") {
+      userToken = args[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--locale") {
+      locale = args[index + 1];
+      index += 1;
+      continue;
+    }
+
+    positionals.push(arg);
+  }
+
+  return {
+    img1: positionals[0],
+    img2: positionals[1],
+    userToken,
+    locale,
+  };
+}
+
 const isMainModule = process.argv[1]?.endsWith("recognize.ts");
+
 if (isMainModule) {
-  const [img1, img2, userToken, locale] = args;
+  const { img1, img2, userToken, locale } = parseCliArgs(process.argv.slice(2));
+  const t = getLocale(locale);
+
   if (!img1 || !img2) {
-    const t = getLocale(locale);
-    console.error(t.prompts.usage);
+    console.error(t.prompts.recognizeUsage);
     process.exit(1);
   }
+
   main(img1, img2, userToken, locale as SupportedLocale).then((result) => {
     console.log(result);
   });

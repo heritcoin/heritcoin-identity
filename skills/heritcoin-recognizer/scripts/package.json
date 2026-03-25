@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "resolve-request": "node resolve-request.ts",
     "recognize": "node recognize.ts",
-    "resolve-chat-images": "node resolve-chat-images.ts"
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {},
   "devDependencies": {

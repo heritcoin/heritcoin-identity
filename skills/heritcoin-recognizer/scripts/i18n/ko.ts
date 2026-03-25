@@ -24,17 +24,21 @@ export const ko: LocaleContent = {
   messages: {
     recognitionResult: "인식 결과",
     uploading: "파일을 서버에 업로드 중...",
-    uploadComplete: "파일 업로드 완료",
     recognitionFailed: "인식 실패",
     notCoin: "동전으로 인식되지 않았습니다. 다른 물체일 수 있습니다",
     error: "오류",
+    needTwoImages: "같은 동전의 이미지 2장을 업로드해 주세요.",
+    needOneMoreImage: "같은 동전의 이미지를 1장 더 업로드해 주세요.",
+    tooManyImages: "다시 업로드해 주세요. 한 번에 2장까지만 처리할 수 있습니다.",
     collectionAdviceWithValuation: "현재 평가액은 약 {valuation}입니다. 먼저 보존 상태를 지키고, 더 정확한 평가를 위해 민트마크, 품종, 상태 세부 정보를 추가로 확인하세요.",
     collectionAdviceForCoinWithValuation: "{coin}의 현재 평가액은 약 {valuation}입니다. 먼저 보존 상태를 지키고, 더 정확한 평가를 위해 민트마크, 품종, 상태 세부 정보를 추가로 확인하세요.",
     collectionAdviceForCoin: "{coin}은 먼저 보존 상태를 지키고, 민트마크, 품종, 상태 세부 정보를 확인한 뒤 장기 소장 여부를 판단하세요.",
     collectionAdviceDefault: "먼저 보존 상태를 지키고, 장기 소장 여부는 품종과 민트마크를 함께 확인한 뒤 결정하세요.",
   },
   prompts: {
-    usage: "用法: node recognize.ts <img1> <img2> [token] [locale]",
+    recognizeUsage:
+      "사용법: node recognize.ts <img1> <img2> [--locale <locale>] [--token <token>]",
+    resolveRequestUsage: "사용법: node resolve-request.ts [session-file]",
     missingFiles: "두 개의 이미지 파일을 제공해 주세요",
   },
 };

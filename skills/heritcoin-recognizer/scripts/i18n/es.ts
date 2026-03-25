@@ -24,17 +24,21 @@ export const es: LocaleContent = {
   messages: {
     recognitionResult: "Resultado del Reconocimiento",
     uploading: "Subiendo archivos al servidor...",
-    uploadComplete: "Carga de archivos completada",
     recognitionFailed: "Reconocimiento fallido",
     notCoin: "No reconocido como moneda, puede ser otro objeto",
     error: "Error",
+    needTwoImages: "Sube 2 imágenes de la misma moneda.",
+    needOneMoreImage: "Sube 1 imagen más de la misma moneda.",
+    tooManyImages: "Vuelve a subirlas. Solo se permiten 2 imágenes por solicitud.",
     collectionAdviceWithValuation: "La valoración actual es de aproximadamente {valuation}; prioriza preservar el estado de la moneda y luego verifica la marca de ceca, la variante y los detalles de conservación para afinar la tasación.",
     collectionAdviceForCoinWithValuation: "Para {coin}, la valoración actual es de aproximadamente {valuation}; prioriza preservar el estado de la moneda y luego verifica la marca de ceca, la variante y los detalles de conservación para afinar la tasación.",
     collectionAdviceForCoin: "Para {coin}, preserva primero el estado de la moneda y luego verifica la marca de ceca, la variante y los detalles de conservación antes de decidir una colección a largo plazo.",
     collectionAdviceDefault: "Prioriza preservar primero el estado de la moneda y luego revisa la variante y la marca de ceca antes de decidir una colección a largo plazo.",
   },
   prompts: {
-    usage: "Uso: node recognize.ts <img1> <img2> [token] [locale]",
+    recognizeUsage:
+      "Uso: node recognize.ts <img1> <img2> [--locale <locale>] [--token <token>]",
+    resolveRequestUsage: "Uso: node resolve-request.ts [session-file]",
     missingFiles: "Por favor proporcione ambos archivos de imagen",
   },
 };

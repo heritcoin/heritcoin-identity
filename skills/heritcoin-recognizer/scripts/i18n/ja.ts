@@ -24,17 +24,21 @@ export const ja: LocaleContent = {
   messages: {
     recognitionResult: "認識結果",
     uploading: "ファイルをサーバーにアップロード中...",
-    uploadComplete: "ファイルのアップロード完了",
     recognitionFailed: "認識失敗",
     notCoin: "硬貨として認識できませんでした。他の物の可能性があります",
     error: "エラー",
+    needTwoImages: "同じコインの画像を2枚アップロードしてください。",
+    needOneMoreImage: "同じコインの画像をもう1枚アップロードしてください。",
+    tooManyImages: "再アップロードしてください。1回の依頼で使える画像は2枚までです。",
     collectionAdviceWithValuation: "現在の推定価格はおよそ{valuation}です。まず状態保護を優先し、その後にミントマーク、版別、品相の詳細を確認すると査定を詰めやすくなります。",
     collectionAdviceForCoinWithValuation: "{coin} の現在の推定価格はおよそ{valuation}です。まず状態保護を優先し、その後にミントマーク、版別、品相の詳細を確認すると査定を詰めやすくなります。",
     collectionAdviceForCoin: "{coin} はまず状態保護を優先し、その後にミントマーク、版別、品相の詳細を確認してから長期保有を判断してください。",
     collectionAdviceDefault: "まず品相の保護を優先し、長期保有を決める前に版別やミントマークを確認してください。",
   },
   prompts: {
-    usage: "使用方法: node recognize.ts <img1> <img2> [token] [locale]",
+    recognizeUsage:
+      "使用方法: node recognize.ts <img1> <img2> [--locale <locale>] [--token <token>]",
+    resolveRequestUsage: "使用方法: node resolve-request.ts [session-file]",
     missingFiles: "両方の画像ファイルを提供してください",
   },
 };
