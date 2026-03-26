@@ -1,9 +1,9 @@
 import { createHash } from "crypto";
 import {
   createReadStream,
+  existsSync,
   mkdirSync,
   readdirSync,
-  statSync,
   writeFileSync,
 } from "fs";
 import { homedir, tmpdir } from "os";
@@ -14,6 +14,12 @@ type ImageRef =
   | { kind: "data_url"; value: string }
   | { kind: "http_url"; value: string }
   | { kind: "local_path"; value: string };
+
+interface CliArgs {
+  sessionFile?: string;
+  sessionRoot?: string;
+  threadId?: string;
+}
 
 interface MessageRecord {
   role: "user" | "assistant";
@@ -39,40 +45,71 @@ const IMAGE_FILE_EXTENSION =
 const HERITCOIN_IMAGE_URL =
   /cdn\.heritcoin\.com\/sky\/identify\/|\/recognise\/image\/|\/identify\/(?:original\/)?image\//i;
 
-function getCodexHome(): string {
-  return process.env.CODEX_HOME || join(homedir(), ".codex");
+function getDefaultSessionRoot(): string {
+  const explicitRoot =
+    process.env.HERITCOIN_SESSION_ROOT || process.env.SKILL_SESSION_ROOT;
+  if (explicitRoot) {
+    return explicitRoot;
+  }
+
+  const hostHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+  return join(hostHome, "sessions");
 }
 
-function findLatestSessionFile(rootDir: string): string {
-  const matches: Array<{ path: string; mtimeMs: number }> = [];
+function getCurrentThreadId(): string | null {
+  return (
+    process.env.HERITCOIN_THREAD_ID ||
+    process.env.SKILL_THREAD_ID ||
+    process.env.CODEX_THREAD_ID ||
+    null
+  );
+}
 
-  function walk(directory: string) {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const fullPath = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        walk(fullPath);
-        continue;
+function parseCliArgs(args: string[]): CliArgs {
+  const result: CliArgs = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const option = args[index];
+    const value = args[index + 1];
+
+    if (option === "--session-file") {
+      if (!value) {
+        throw new Error("缺少 --session-file 的值");
       }
-      if (!entry.isFile() || !entry.name.startsWith("rollout-") || !entry.name.endsWith(".jsonl")) {
-        continue;
-      }
-      matches.push({ path: fullPath, mtimeMs: statSync(fullPath).mtimeMs });
+      result.sessionFile = value;
+      index += 1;
+      continue;
     }
+
+    if (option === "--session-root") {
+      if (!value) {
+        throw new Error("缺少 --session-root 的值");
+      }
+      result.sessionRoot = value;
+      index += 1;
+      continue;
+    }
+
+    if (option === "--thread-id") {
+      if (!value) {
+        throw new Error("缺少 --thread-id 的值");
+      }
+      result.threadId = value;
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`未知参数: ${option}`);
   }
 
-  walk(rootDir);
-  if (matches.length === 0) {
-    throw new Error(`未找到 session 日志: ${rootDir}`);
-  }
-
-  matches.sort((left, right) => right.mtimeMs - left.mtimeMs);
-  return matches[0].path;
+  return result;
 }
 
 function findSessionFileByThreadId(rootDir: string, threadId: string): string | null {
   function walk(directory: string): string | null {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const fullPath = join(directory, entry.name);
+
       if (entry.isDirectory()) {
         const nestedMatch = walk(fullPath);
         if (nestedMatch) {
@@ -80,6 +117,7 @@ function findSessionFileByThreadId(rootDir: string, threadId: string): string | 
         }
         continue;
       }
+
       if (
         entry.isFile() &&
         entry.name.startsWith("rollout-") &&
@@ -89,10 +127,37 @@ function findSessionFileByThreadId(rootDir: string, threadId: string): string | 
         return fullPath;
       }
     }
+
+    return null;
+  }
+
+  if (!existsSync(rootDir)) {
     return null;
   }
 
   return walk(rootDir);
+}
+
+function resolveSessionFile(args: CliArgs): string {
+  if (args.sessionFile) {
+    return args.sessionFile;
+  }
+
+  const sessionRoot = args.sessionRoot || getDefaultSessionRoot();
+  const threadId = args.threadId || getCurrentThreadId();
+
+  if (!threadId) {
+    throw new Error(
+      "未提供当前线程上下文，无法恢复聊天附件。请显式传入两张图片引用，或为桥接脚本提供 --thread-id / --session-file。",
+    );
+  }
+
+  const sessionFile = findSessionFileByThreadId(sessionRoot, threadId);
+  if (!sessionFile) {
+    throw new Error(`未找到当前线程的消息记录: ${threadId}`);
+  }
+
+  return sessionFile;
 }
 
 function classifyImageRef(value: string): ImageRef {
@@ -321,10 +386,8 @@ function resolveLatestTaskImages(messages: MessageRecord[]): ImageRef[] {
       continue;
     }
 
-    if (!assistantKeepsTaskOpen(message.text)) {
-      currentTaskImages = [];
-      assistantRequestedMoreImages = false;
-    }
+    currentTaskImages = [];
+    assistantRequestedMoreImages = false;
   }
 
   return currentTaskImages;
@@ -371,12 +434,8 @@ function materializeImages(images: ImageRef[], sessionFile: string): string[] {
 }
 
 async function main() {
-  const sessionsRoot = join(getCodexHome(), "sessions");
-  const sessionFileArg = process.argv[2];
-  const threadSessionFile = process.env.CODEX_THREAD_ID
-    ? findSessionFileByThreadId(sessionsRoot, process.env.CODEX_THREAD_ID)
-    : null;
-  const sessionFile = sessionFileArg || threadSessionFile || findLatestSessionFile(sessionsRoot);
+  const cliArgs = parseCliArgs(process.argv.slice(2));
+  const sessionFile = resolveSessionFile(cliArgs);
   const messages = await loadMessages(sessionFile);
   const taskImages = resolveLatestTaskImages(messages);
   const images = materializeImages(taskImages, sessionFile);

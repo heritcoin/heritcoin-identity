@@ -10,31 +10,31 @@
     {
       "id": 2,
       "prompt": "我先发第一张图，帮我看看这枚硬币：\nhttps://cdn.heritcoin.com/sky/identify/original/image/20260313/i260313194255ajydm5u2b34llvzgp1l-W720H1280.jpeg",
-      "expected_output": "明确当前只收到 1 张，还缺同一枚钱币的另一张图；同时说明用户补齐后即可继续识别和估价；不要调用识别；不要要求用户重新上传 2 张。",
+      "expected_output": "明确当前只收到 1 张，还缺同一枚钱币的另一张图；同时说明用户补齐后即可继续识别和估价；不要调用识别；不要要求用户重新上传 2 张；不要直接用模型原生视觉猜测这是什么币。",
       "files": []
     },
     {
       "id": 3,
+      "prompt": "我先上传这枚硬币的第一张聊天附件图，下一条再补第二张图。",
+      "expected_output": "先保持当前任务打开；明确还缺同一枚钱币的另一张图；不要要求用户把聊天附件重新转换成 URL。",
+      "files": []
+    },
+    {
+      "id": 4,
       "prompt": "上一条消息里你已经收到这枚硬币的第一张图，这一条我补第二张图：\nhttps://cdn.heritcoin.com/sky/identify/original/image/20260313/i260313194255kxg94sme3b215ctr3xx-W720H1280.jpeg",
       "expected_output": "将这张图并入最近一个未完成的同一枚钱币任务，并执行一次识别；不要再要求补图；不要只按本条消息把它当成单图请求。",
       "files": []
     },
     {
-      "id": 4,
+      "id": 5,
       "prompt": "这三张都是我刚拍的，你帮我识别一下当前这枚硬币：\nhttps://cdn.heritcoin.com/sky/identify/original/image/20260313/i260313194301465irk1ikkrd0cqsba9-W720H1280.jpeg\nhttps://cdn.heritcoin.com/sky/identify/original/image/20260313/i2603131943005mmdobe4kgt203nopcp-W720H1280.jpg\nhttps://cdn.heritcoin.com/sky/identify/original/image/20260313/i260313194255ajydm5u2b34llvzgp1l-W720H1280.jpeg",
       "expected_output": "直接提示“一次最多上传2张图，请重新上传”；不要自动拆成多次识别；不要让用户指定当前要识别的哪 2 张图。",
       "files": []
     },
     {
-      "id": 5,
+      "id": 6,
       "prompt": "这两张是同一枚钱币，但我不确定是不是正反面，你直接帮我识别：\nhttps://cdn.heritcoin.com/sky/identify/original/image/20260313/i260313194255ajydm5u2b34llvzgp1l-W720H1280.jpeg\nhttps://cdn.heritcoin.com/sky/identify/original/image/20260313/i260313194255kxg94sme3b215ctr3xx-W720H1280.jpeg",
       "expected_output": "直接将两张图作为同一次识别输入并返回一份结果；不要要求用户先确认是否正反面。",
-      "files": []
-    },
-    {
-      "id": 6,
-      "prompt": "前两条消息里我已经连续上传了同一枚硬币的两张聊天附件，这一条消息我只问：这是什么币？",
-      "expected_output": "沿用最近未完成任务里的 2 张聊天附件，先通过 `resolve-chat-images.ts` 取回附件路径，再直接识别 1 次；不要因为当前消息没有新图片而忽略该任务；不要直接看图猜测结果。",
       "files": []
     },
     {
@@ -45,8 +45,8 @@
     },
     {
       "id": 8,
-      "prompt": "上一轮里你已经完成了一枚硬币的识别并返回结果。现在我新发来另一枚硬币的第一张聊天附件图，请继续处理。",
-      "expected_output": "把当前附件视为新任务的第一张图；明确还缺同一枚钱币的另一张图，并说明补齐后即可继续识别和估价；不要继续引用上一轮已完成任务的旧图，不要把历史图片并入当前任务。",
+      "prompt": "上一轮里你已经完成了一枚硬币的识别并返回结果。现在我新发来另一枚硬币的第一张图，请继续处理：\nhttps://cdn.heritcoin.com/sky/identify/original/image/20260324/i20260324190544j063kzn46inhbl9pu-W539H531.jpg",
+      "expected_output": "把当前图片视为新任务的第一张图；明确还缺同一枚钱币的另一张图，并说明补齐后即可继续识别和估价；不要继续引用上一轮已完成任务的旧图，不要把历史图片并入当前任务。",
       "files": []
     },
     {
@@ -64,19 +64,19 @@
     {
       "id": 11,
       "prompt": "上一条回复里你刚说这枚硬币还差一张图。这一条我紧接着只补发 1 个新的图片 URL：https://cdn.heritcoin.com/sky/identify/original/image/20260313/i260313194255kxg94sme3b215ctr3xx-W720H1280.jpeg",
-      "expected_output": "把这张显式 URL 并入最近未完成任务；如果前一张已存在，则达到 2 张后直接识别；不要把它错误当成新任务第 1 张图。",
+      "expected_output": "把这张图片并入最近未完成任务；如果前一张已存在，则达到 2 张后直接识别；不要把它错误当成新任务第 1 张图。",
       "files": []
     },
     {
       "id": 12,
       "prompt": "更早历史里还有一枚钱币的未完成单图任务，但我这条消息并不是紧接着补图提示。我现在只单独发 1 个新的硬币图片 URL：https://cdn.heritcoin.com/sky/identify/original/image/20260324/i20260324190544j063kzn46inhbl9pu-W539H531.jpg",
-      "expected_output": "把当前显式 URL 视为新任务第 1 张图；不要因为更早历史里的未完成任务自动凑成 2 张并直接识别。",
+      "expected_output": "把当前显式图片视为新任务第 1 张图；不要因为更早历史里的未完成任务自动凑成 2 张并直接识别。",
       "files": []
     },
     {
       "id": 13,
-      "prompt": "前面两条消息里我已经用中文问过“这是什么币”，并补齐了两张图。现在请直接给我最终识别结果。",
-      "expected_output": "最终识别结果必须保持中文输出；如果调用 `node recognize.ts` 时没有显式传 `locale`，也要依赖脚本从当前会话里的最近用户文字推断为中文，不要回英文。",
+      "prompt": "前面我一直在用中文问这枚币是什么。现在请直接给我最终识别结果。",
+      "expected_output": "当用户语言很明确时，调用 `npx tsx recognize.ts` 时应显式传入 `--locale zh-CN`；最终识别结果必须保持中文输出；不要再依赖会话日志推断 locale。",
       "files": []
     }
   ]
