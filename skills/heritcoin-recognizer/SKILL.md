@@ -25,6 +25,19 @@ metadata:
 - 只要已经拿到同一枚钱币的 2 张图，就直接识别；不要额外要求必须是“正反面”。
 - 超过 2 张图时直接拒绝：`一次最多上传2张图，请重新上传`
 
+## 环境准备
+
+首次使用前，必须在 `scripts/` 目录安装依赖：
+
+```bash
+cd scripts && npm install
+```
+
+依赖包括：
+- `typescript` - TypeScript 编译器
+- `ts-node` - 直接运行 TypeScript 文件
+- `@types/node` - Node.js 类型定义
+
 ## 最小工作流
 
 1. 收集当前任务图片
@@ -38,7 +51,7 @@ metadata:
    在 `scripts/` 目录运行：
 
 ```bash
-node resolve-chat-images.ts
+npx ts-node resolve-chat-images.ts
 ```
 
 把返回的 `images` 数组视为当前任务可执行图片路径。
@@ -61,10 +74,9 @@ node resolve-chat-images.ts
    在 `scripts/` 目录运行：
 
 ```bash
-node recognize.ts <img1> <img2> [token] [locale]
+npx ts-node recognize.ts <img1> <img2> [token] [locale]
 ```
 
-- 不要执行 `npm install`。
 - 除非用户明确提供 `token`，否则使用脚本自身认证配置。
 - 输出语言跟随用户当前请求语言；用户用中文提问时，最终结果必须输出中文。
 - 当用户语言很明确时，优先显式传入对应 `locale`。
