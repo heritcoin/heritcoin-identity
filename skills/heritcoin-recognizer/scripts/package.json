@@ -1,10 +1,9 @@
 {
   "name": "heritcoin-recognizer-scripts",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
-    "recognize": "tsx recognize.ts",
-    "resolve-chat-images": "tsx resolve-chat-images.ts"
+    "recognize": "tsx recognize.ts"
   },
   "dependencies": {},
   "devDependencies": {

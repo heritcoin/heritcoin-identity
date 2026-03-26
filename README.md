@@ -2,14 +2,14 @@
 
 English | [中文](README.zh.md)
 
-AI-powered coin and antique identification skills for Claude Code / OpenCode.
+AI-powered coin and antique identification skills.
 
 ## 功能特性
 
 - 🪙 **硬币识别** - 识别古钱币、纪念币、机制币，获取详细的鉴定信息
 - 💰 **实时估价** - 提供硬币的市场估值参考
 - 🔍 **多语言支持** - 支持中文、英文、日语、韩语、俄语、西班牙语等多语言识别
-- 📱 **便捷交互** - 支持图片 URL 和本地文件上传
+- 📱 **便捷交互** - 支持图片 URL、本地文件路径和 data URL 输入
 
 ## 快速开始
 
@@ -51,37 +51,32 @@ npx skills add heritcoin/heritcoin-identity --skill heritcoin-recognizer
 # 方式二：提供本地图片路径
 /heritcoin-recognizer /path/to/obverse.jpg /path/to/reverse.jpg
 
-# 方式三：直接上传图片让 AI 识别
-/heritcoin-recognizer
+# 方式三：调用脚本
+npx tsx skills/heritcoin-recognizer/scripts/recognize.ts <img1> <img2> --locale zh-CN
 ```
 
 **识别结果示例**:
 
-```
-🎫 识别结果
+```md
+## 识别结果
 
-💰 估值: $3.50 USD
+| 项目 | 详情 |
+| --- | --- |
+| 名称 | Poland 50 groszy 1987-MW |
+| 估价 | $3.50 USD |
+| 年份 | 1987 |
+| 国家/地区 | Poland |
+| 面值 | 50 groszy |
+| 铸造量 | 22,000,000 |
+| Krause编号 | KM#95 |
+| 材质 | Copper-nickel |
+| 直径 | 17.5 mm |
+| 厚度 | 1.2 mm |
+| 重量 | 2.4 g |
+| 正面 | Eagle with crown, Poland inscription |
+| 背面 | 50 value, wheat ears |
 
-名称: Poland 50 groszy 1987-MW
-年份: 1987
-国家/地区: Poland
-面值: 50 groszy
-
-铸造量: 22,000,000
-
-⸻
-
-📐 详细信息
-
-Krause编号: KM#95
-材质: Copper-nickel
-
-直径: 17.5mm
-厚度: 1.2mm
-重量: 2.4g
-
-正面: Eagle with crown, Poland inscription
-背面: 50 value, wheat ears
+收藏建议: 建议先保持原始状态。
 ```
 
 ## 项目结构
@@ -96,10 +91,9 @@ heritcoin-identity/
 │       │   ├── package.json
 │       │   ├── tsconfig.json
 │       │   └── i18n/             # 多语言支持
+│       ├── references/           # runtime / eval / output 约束
 │       └── evals/
 │           └── evals.json         # 评估测试用例
-├── dev/
-│   └── INSTALL.md                # 开发安装指南
 └── README.md
 ```
 
@@ -111,10 +105,6 @@ heritcoin-identity/
 cd skills/heritcoin-recognizer/scripts
 npm install
 ```
-
-## 更新日志
-
-查看 [CHANGELOG.md](./CHANGELOG.md) 了解版本历史。
 
 ## 相关链接
 

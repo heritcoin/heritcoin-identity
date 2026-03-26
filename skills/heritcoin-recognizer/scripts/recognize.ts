@@ -2,16 +2,12 @@ import {
   readFileSync,
   existsSync,
   mkdirSync,
-  readdirSync,
-  statSync,
   writeFileSync,
 } from "fs";
-import { homedir } from "os";
 import { join, dirname } from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import {
-  detectLocaleFromText,
   getLocale,
   getCurrentLocale,
   getLanguageCode,
@@ -31,9 +27,6 @@ const DEFAULT_TOKEN =
 
 const CACHE_DIR = join(__dirname, ".cache");
 const UUID_CACHE_FILE = join(CACHE_DIR, "device.uuid");
-const IMAGE_URL_IN_TEXT = /https?:\/\/[^\s"'`<>()\]]+/gi;
-const LOCAL_IMAGE_PATH_IN_TEXT =
-  /(?:^|[\s(])((?:\/|~\/)[^\s"'`<>()]+?\.(?:jpe?g|png|gif|webp|bmp|heic|heif))(?:$|[\s)])/gi;
 
 function generateUUID(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -70,173 +63,6 @@ function getCachedUUID(): string {
   return cachedUUID;
 }
 
-function getCodexHome(): string {
-  return process.env.CODEX_HOME || join(homedir(), ".codex");
-}
-
-function findLatestSessionFile(rootDir: string): string | null {
-  const matches: Array<{ path: string; mtimeMs: number }> = [];
-
-  function walk(directory: string) {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const fullPath = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        walk(fullPath);
-        continue;
-      }
-
-      if (
-        !entry.isFile() ||
-        !entry.name.startsWith("rollout-") ||
-        !entry.name.endsWith(".jsonl")
-      ) {
-        continue;
-      }
-
-      matches.push({ path: fullPath, mtimeMs: statSync(fullPath).mtimeMs });
-    }
-  }
-
-  if (!existsSync(rootDir)) {
-    return null;
-  }
-
-  walk(rootDir);
-  if (matches.length === 0) {
-    return null;
-  }
-
-  matches.sort((left, right) => right.mtimeMs - left.mtimeMs);
-  return matches[0].path;
-}
-
-function findSessionFileByThreadId(
-  rootDir: string,
-  threadId: string,
-): string | null {
-  function walk(directory: string): string | null {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const fullPath = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        const nestedMatch = walk(fullPath);
-        if (nestedMatch) {
-          return nestedMatch;
-        }
-        continue;
-      }
-
-      if (
-        entry.isFile() &&
-        entry.name.startsWith("rollout-") &&
-        entry.name.endsWith(".jsonl") &&
-        entry.name.includes(threadId)
-      ) {
-        return fullPath;
-      }
-    }
-
-    return null;
-  }
-
-  if (!existsSync(rootDir)) {
-    return null;
-  }
-
-  return walk(rootDir);
-}
-
-function stripImageRefsFromText(text: string): string {
-  return text
-    .replace(IMAGE_URL_IN_TEXT, " ")
-    .replace(LOCAL_IMAGE_PATH_IN_TEXT, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractUserText(entry: unknown): string | null {
-  if (!entry || typeof entry !== "object") {
-    return null;
-  }
-
-  const record = entry as {
-    type?: string;
-    payload?: {
-      type?: string;
-      role?: string;
-      content?: Array<Record<string, unknown>>;
-    };
-  };
-
-  if (
-    record.type !== "response_item" ||
-    record.payload?.type !== "message" ||
-    record.payload.role !== "user" ||
-    !Array.isArray(record.payload.content)
-  ) {
-    return null;
-  }
-
-  const text = record.payload.content
-    .filter(
-      (item) => item.type === "input_text" && typeof item.text === "string",
-    )
-    .map((item) => String(item.text))
-    .join(" ")
-    .trim();
-
-  return text || null;
-}
-
-export function detectConversationLocaleFromSessionFile(
-  sessionFile: string,
-): SupportedLocale | null {
-  const lines = readFileSync(sessionFile, "utf8").split(/\r?\n/);
-
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index]?.trim();
-    if (!line) {
-      continue;
-    }
-
-    try {
-      const userText = extractUserText(JSON.parse(line));
-      if (!userText) {
-        continue;
-      }
-
-      const detectedLocale = detectLocaleFromText(
-        stripImageRefsFromText(userText),
-      );
-      if (detectedLocale) {
-        return detectedLocale;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
-function detectConversationLocale(): SupportedLocale | null {
-  try {
-    const sessionsRoot = join(getCodexHome(), "sessions");
-    const threadSessionFile = process.env.CODEX_THREAD_ID
-      ? findSessionFileByThreadId(sessionsRoot, process.env.CODEX_THREAD_ID)
-      : null;
-    const sessionFile =
-      threadSessionFile || findLatestSessionFile(sessionsRoot);
-
-    if (!sessionFile) {
-      return null;
-    }
-
-    return detectConversationLocaleFromSessionFile(sessionFile);
-  } catch {
-    return null;
-  }
-}
-
 export function resolveRuntimeLocale(
   locale?: SupportedLocale | string,
 ): SupportedLocale {
@@ -246,7 +72,7 @@ export function resolveRuntimeLocale(
       : locale
     : null;
 
-  return explicitLocale || detectConversationLocale() || getCurrentLocale();
+  return explicitLocale || getCurrentLocale();
 }
 
 interface DeviceInfo {
@@ -254,6 +80,13 @@ interface DeviceInfo {
   brand: string;
   os: string;
   osVer: string;
+}
+
+interface CliArgs {
+  img1: string;
+  img2: string;
+  userToken?: string;
+  locale?: SupportedLocale;
 }
 
 interface CoinInfo {
@@ -834,16 +667,60 @@ export async function main(
   }
 }
 
+function parseCliArgs(args: string[]): CliArgs {
+  if (args.length < 2) {
+    throw new Error("缺少图片参数");
+  }
+
+  const [img1, img2, ...options] = args;
+  let userToken: string | undefined;
+  let locale: SupportedLocale | undefined;
+
+  for (let index = 0; index < options.length; index += 1) {
+    const option = options[index];
+
+    if (option === "--token") {
+      const value = options[index + 1];
+      if (!value) {
+        throw new Error("缺少 --token 的值");
+      }
+      userToken = value;
+      index += 1;
+      continue;
+    }
+
+    if (option === "--locale") {
+      const value = options[index + 1];
+      if (!value) {
+        throw new Error("缺少 --locale 的值");
+      }
+      const normalized = normalizeLocale(value);
+      if (!normalized) {
+        throw new Error(`不支持的 locale: ${value}`);
+      }
+      locale = normalized;
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`未知参数: ${option}`);
+  }
+
+  return { img1, img2, userToken, locale };
+}
+
 const args = process.argv.slice(2);
 const isMainModule = process.argv[1]?.endsWith("recognize.ts");
 if (isMainModule) {
-  const [img1, img2, userToken, locale] = args;
-  if (!img1 || !img2) {
-    const t = getLocale(locale);
+  try {
+    const { img1, img2, userToken, locale } = parseCliArgs(args);
+    main(img1, img2, userToken, locale).then((result) => {
+      console.log(result);
+    });
+  } catch (error) {
+    const t = getLocale(getCurrentLocale());
+    console.error(error instanceof Error ? error.message : String(error));
     console.error(t.prompts.usage);
     process.exit(1);
   }
-  main(img1, img2, userToken, locale as SupportedLocale).then((result) => {
-    console.log(result);
-  });
 }
