@@ -1,7 +1,7 @@
 ---
 name: heritcoin-recognizer
 description: 识别、鉴定、估价单枚硬币、古钱币、纪念币。用户提供聊天附件图片、图片 URL 或本地图片路径，并希望返回币名、年份、国家或地区、版别、铸记、铸币工艺、品相、价格等信息时使用。严格将一次识别视为“同一枚钱币的两张图片”；当两张图在同一条消息或相邻多条消息中补齐时都必须触发。
-version: 1.0.0
+version: 1.0.1
 metadata:
   openclaw:
     emoji: 🪙
@@ -34,8 +34,9 @@ cd scripts && npm install
 ```
 
 依赖包括：
+
 - `typescript` - TypeScript 编译器
-- `ts-node` - 直接运行 TypeScript 文件
+- `tsx` - 直接运行 TypeScript 文件
 - `@types/node` - Node.js 类型定义
 
 ## 最小工作流
@@ -51,7 +52,7 @@ cd scripts && npm install
    在 `scripts/` 目录运行：
 
 ```bash
-npx ts-node resolve-chat-images.ts
+npx tsx resolve-chat-images.ts
 ```
 
 把返回的 `images` 数组视为当前任务可执行图片路径。
@@ -74,7 +75,7 @@ npx ts-node resolve-chat-images.ts
    在 `scripts/` 目录运行：
 
 ```bash
-npx ts-node recognize.ts <img1> <img2> [token] [locale]
+npx tsx recognize.ts <img1> <img2> [token] [locale]
 ```
 
 - 除非用户明确提供 `token`，否则使用脚本自身认证配置。
