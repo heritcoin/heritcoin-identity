@@ -4,8 +4,8 @@ import {
   mkdirSync,
   writeFileSync,
 } from "fs";
+import { release as getOsRelease } from "os";
 import { join, dirname } from "path";
-import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import {
   getLocale,
@@ -81,6 +81,8 @@ interface DeviceInfo {
   os: string;
   osVer: string;
 }
+
+const cachedUserAgents = new Map<string, string>();
 
 interface CliArgs {
   img1: string;
@@ -240,36 +242,40 @@ interface CoinRecognitionResponse {
 }
 
 function getDeviceInfo(): DeviceInfo {
-  const osType = process.platform;
-  let devModel = "";
-  let brand = "unknown";
-  let os = "Unknown";
-  let osVer = process.release?.name || "";
+  const osVer = getOsRelease();
 
-  if (osType === "darwin") {
-    try {
-      const model = execSync("sysctl -n hw.model", { encoding: "utf8" }).trim();
-      devModel = model.includes("iPhone") ? model : "Mac";
-    } catch {
-      devModel = "Mac";
-    }
-    brand = "apple";
-    os = "iOS";
-    osVer = execSync("sw_vers -productVersion", { encoding: "utf8" }).trim();
-  } else if (osType === "win32") {
-    devModel = "Windows PC";
-    brand = "microsoft";
-    os = "Windows";
-  } else if (osType === "linux") {
-    devModel = "Linux PC";
-    brand = "linux";
-    os = "Linux";
+  switch (process.platform) {
+    case "darwin":
+      return {
+        devModel: "Mac",
+        brand: "apple",
+        os: "macOS",
+        osVer,
+      };
+    case "win32":
+      return {
+        devModel: "Windows PC",
+        brand: "microsoft",
+        os: "Windows",
+        osVer,
+      };
+    default:
+      return {
+        devModel: "Linux PC",
+        brand: "linux",
+        os: "Linux",
+        osVer,
+      };
   }
-
-  return { devModel, brand, os, osVer };
 }
 
 function generateUserAgent(locale?: SupportedLocale): string {
+  const localeKey = locale || "default";
+  const cached = cachedUserAgents.get(localeKey);
+  if (cached) {
+    return cached;
+  }
+
   const device = getDeviceInfo();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const langCode = getLanguageCode(locale);
@@ -292,7 +298,9 @@ function generateUserAgent(locale?: SupportedLocale): string {
     `sc/ai-agent`,
   ];
 
-  return parts.join(";");
+  const userAgent = parts.join(";");
+  cachedUserAgents.set(localeKey, userAgent);
+  return userAgent;
 }
 
 function isHttpUrl(value: string): boolean {
